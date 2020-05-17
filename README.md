@@ -1,4 +1,9 @@
-# abap_unit_expected_data_generator
-ABAP Unit test - Expected data generator
+# ABAP Unit test - Expected data generator
 
-See SAP Blog: 
+# Manual
+See SAP Blog: <todo>
+
+# Installation
+Copy and past the ABAP file to your ABAP system.
+
+
