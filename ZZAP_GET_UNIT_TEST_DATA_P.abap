@@ -3355,7 +3355,8 @@ CLASS lcl_main_controller DEFINITION.
 
     TYPES:
       BEGIN OF gts_data_object,
-        data_object TYPE REF TO data,
+        data_object  TYPE REF TO data,
+        is_empty_ind TYPE abap_bool,
       END OF gts_data_object,
       gtt_data_objects TYPE STANDARD TABLE OF gts_data_object.
 
@@ -3395,8 +3396,17 @@ CLASS lcl_main_controller IMPLEMENTATION.
 
           DATA(lr_converter) = NEW lcl_deepstruc_to_abapcode_cvt( ).
 
+          DATA lv_empty_fields_ind TYPE abap_bool.
+
+          IF <lr_data>-is_empty_ind = abap_true.
+            lv_empty_fields_ind = abap_true.
+            BREAK-POINT. "fill empty structure.
+          ELSE.
+            lv_empty_fields_ind = p_empty.
+          ENDIF.
+
           DATA(ls_convert_parameters) = VALUE lcl_deepstruc_to_abapcode_cvt=>gts_parameters(
-            empty_fields_ind =  p_empty
+            empty_fields_ind = lv_empty_fields_ind
             comment_show = VALUE #(
               field_text_show_ind           = p_fldtxt
               element_name_show_ind         = p_elemnm
@@ -3505,11 +3515,14 @@ START-OF-SELECTION.
 
   DATA(ls_bukrs_ddic_field) = lr_element_descr->get_ddic_field( ).
 
+  CLEAR ls_bukrs_ddic_field.
+
   "*********************************************************
   "Convert Deep structure data to ABAP data code
   "*********************************************************
 
   gr_controller->show_abap_data_lines(
     it_data_objects = VALUE #(
-      ( data_object = REF #( ls_bukrs_ddic_field ) )
+      ( data_object  = REF #( ls_bukrs_ddic_field )
+        is_empty_ind = abap_true )
     ) ).
