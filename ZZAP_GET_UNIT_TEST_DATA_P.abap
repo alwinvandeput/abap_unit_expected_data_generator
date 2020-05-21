@@ -1642,38 +1642,57 @@ CLASS zab_abap_variable_name_bo IMPLEMENTATION.
 
 ENDCLASS.
 
-CLASS zab_ddic_data_element_bo DEFINITION.
+CLASS zab_abap_data_element_bo2 DEFINITION.
 
   PUBLIC SECTION.
 
     TYPES:
       BEGIN OF gts_field,
         name         TYPE string,
-        data_element TYPE REF TO zab_ddic_data_element_bo,
+        data_element TYPE REF TO zab_abap_data_element_bo2,
       END OF gts_field,
       gtt_field_list TYPE STANDARD TABLE OF gts_field WITH EMPTY KEY.
 
     CLASS-METHODS:
-      get_by_name
+      get_instance_by_ddic_name
         IMPORTING iv_name                TYPE rollname
-        RETURNING VALUE(rr_data_element) TYPE REF TO zab_ddic_data_element_bo
+        RETURNING VALUE(rr_data_element) TYPE REF TO zab_abap_data_element_bo2
         RAISING   zcx_return_exc,
-      get_by_descr
+      get_instance_by_descr
         IMPORTING iv_name                TYPE string
                   ir_abap_elemdescr      TYPE REF TO cl_abap_elemdescr
-        RETURNING VALUE(rr_data_element) TYPE REF TO zab_ddic_data_element_bo
+        RETURNING VALUE(rr_data_element) TYPE REF TO zab_abap_data_element_bo2
         RAISING   zcx_return_exc.
 
     METHODS:
-      get_type_descr
-        RETURNING VALUE(rr_type_descr) TYPE REF TO cl_abap_typedescr,
-      get_struct_field_list
-        RETURNING VALUE(rt_field_list) TYPE gtt_field_list
-        RAISING   zcx_return_exc,
-      get_element_dd_field
+      get_abap_elem_descr
+        RETURNING VALUE(rr_type_descr) TYPE REF TO cl_abap_elemdescr,
+      get_ddic_field_ind
+        RETURNING VALUE(rv_ddic_field_ind) TYPE abap_bool,
+      get_internal_data_type
+        RETURNING VALUE(rv_internal_data_type) TYPE char1. "Todo: char1 specifiek maken
+*      get_struct_field_list
+*        RETURNING VALUE(rt_field_list) TYPE gtt_field_list
+*        RAISING   zcx_return_exc,
+
+    TYPES:
+      BEGIN OF gts_non_ddic_field,
+        internal_type TYPE char1,  "todo: specifiek maken
+        length        TYPE dfies-leng,
+        decimals      TYPE dfies-decimals,
+        output_length TYPE dfies-outputlen,
+      END OF gts_non_ddic_field.
+
+    METHODS
+      get_non_ddic_field
+        RETURNING VALUE(rs_dd_field) TYPE gts_non_ddic_field
+        RAISING   zcx_return_exc.
+
+    METHODS:
+      get_ddic_field
         RETURNING VALUE(rs_dd_field) TYPE dfies
         RAISING   zcx_return_exc,
-      get_element_check_table
+      get_ddic_check_table
         RETURNING VALUE(rv_check_table) TYPE komp_check
         RAISING   zcx_return_exc,
       get_dummy_value
@@ -1682,31 +1701,39 @@ CLASS zab_ddic_data_element_bo DEFINITION.
       get_sql_value
         IMPORTING iv_value       TYPE any
         RETURNING VALUE(rv_text) TYPE string
-        RAISING   zcx_return_exc,
-      get_description
-        RETURNING VALUE(rv_description) TYPE string.
+        RAISING   zcx_return_exc.
 
   PROTECTED SECTION.
     DATA:
-      gv_name       TYPE string,
-      gr_type_descr TYPE REF TO cl_abap_typedescr.
+      gr_abap_elem_descr TYPE REF TO cl_abap_elemdescr,
+      gv_name            TYPE string.
 
 ENDCLASS.
 
 
-CLASS zab_ddic_data_element_bo IMPLEMENTATION.
+CLASS zab_abap_data_element_bo2 IMPLEMENTATION.
 
-  METHOD get_by_name.
+*  METHOD get_instance_by_value.
+*
+*    rr_data_element = NEW #( ).
+*
+*    data lr_typedescr type ref to cl_abap_typedescr.
+*
+*  endmethod.
+
+  METHOD get_instance_by_ddic_name.
 
     rr_data_element = NEW #( ).
 
     rr_data_element->gv_name = iv_name.
 
+    DATA lr_typedescr TYPE REF TO cl_abap_typedescr.
+
     CALL METHOD cl_abap_typedescr=>describe_by_name
       EXPORTING
         p_name         = iv_name
       RECEIVING
-        p_descr_ref    = rr_data_element->gr_type_descr
+        p_descr_ref    = lr_typedescr
       EXCEPTIONS
         type_not_found = 1
         OTHERS         = 2.
@@ -1721,74 +1748,150 @@ CLASS zab_ddic_data_element_bo IMPLEMENTATION.
 
     ENDIF.
 
+    rr_data_element->gr_abap_elem_descr = CAST #( lr_typedescr ).
+
   ENDMETHOD.
 
-  METHOD get_by_descr.
+  METHOD get_instance_by_descr.
 
     rr_data_element = NEW #( ).
 
-    rr_data_element->gr_type_descr = ir_abap_elemdescr.
+    rr_data_element->gr_abap_elem_descr = ir_abap_elemdescr.
 
-    DATA(lv_is_ddic_type_ind) = ir_abap_elemdescr->is_ddic_type( ).
+    DATA(lv_is_ddic_type_ind) = rr_data_element->get_ddic_field_ind( ).
 
     IF lv_is_ddic_type_ind = abap_false.
 
-      DATA(lx_return) = zcx_return_exc=>create_by_text(
-        iv_message    = 'Element &1 is not a DDIC element.'
-        iv_field_name = ''
-        iv_variable_1 = CONV #( iv_name )
-      ).
+      "No name
 
-      RAISE EXCEPTION lx_return.
+    ELSE.
+
+      DATA(ls_ddic_field) = ir_abap_elemdescr->get_ddic_field( ).
+
+      rr_data_element->gv_name = ls_ddic_field-rollname.
 
     ENDIF.
 
-    DATA(ls_ddic_field) = ir_abap_elemdescr->get_ddic_field( ).
+  ENDMETHOD.
 
-    rr_data_element->gv_name = ls_ddic_field-rollname.
+  METHOD get_abap_elem_descr.
+
+    rr_type_descr = me->gr_abap_elem_descr.
 
   ENDMETHOD.
 
-  METHOD get_type_descr.
+  METHOD get_ddic_field_ind.
 
-    rr_type_descr = gr_type_descr.
-
-  ENDMETHOD.
-
-  METHOD get_struct_field_list.
-
-    DATA(lr_structure_descr) =
-      CAST cl_abap_structdescr( gr_type_descr ).
-
-    DATA(lt_dd_field_list) =
-      lr_structure_descr->get_ddic_field_list( ).
-
-    LOOP AT lt_dd_field_list
-      ASSIGNING FIELD-SYMBOL(<ls_dd_field>).
-
-      APPEND INITIAL LINE TO rt_field_list
-        ASSIGNING FIELD-SYMBOL(<ls_field>).
-
-      <ls_field>-name = <ls_dd_field>-fieldname.
-
-      <ls_field>-data_element =
-        zab_ddic_data_element_bo=>get_by_name( <ls_dd_field>-rollname ).
-
-    ENDLOOP.
+    DATA(lv_is_ddic_type_ind) = me->gr_abap_elem_descr->is_ddic_type( ).
 
   ENDMETHOD.
 
-  METHOD get_element_dd_field.
+  METHOD get_internal_data_type.  "TODO: deze methode verwijderen
+
+    DATA(lv_ddic_field_ind) = me->get_ddic_field_ind( ).
+
+    IF lv_ddic_field_ind = abap_true.
+
+      DATA(ls_ddic_field) = me->gr_abap_elem_descr->get_ddic_field( ).
+
+      rv_internal_data_type = ls_ddic_field-inttype.
+
+    ELSE.
+
+      DATA lr_data TYPE REF TO data.
+
+      CREATE DATA lr_data
+         TYPE HANDLE me->gr_abap_elem_descr.
+
+      ASSIGN lr_data->*
+        TO FIELD-SYMBOL(<lv_value>).
+
+      DESCRIBE FIELD <lv_value>
+        TYPE DATA(lv_type).
+
+      rv_internal_data_type = lv_type.
+
+    ENDIF.
+
+  ENDMETHOD.
+*
+*  METHOD get_struct_field_list.
+*
+*    DATA(lr_structure_descr) =
+*      CAST cl_abap_structdescr( me->gr_abap_elem_descr ).
+*
+*    DATA(lt_dd_field_list) =
+*      lr_structure_descr->get_ddic_field_list( ).
+*
+*    LOOP AT lt_dd_field_list
+*      ASSIGNING FIELD-SYMBOL(<ls_dd_field>).
+*
+*      APPEND INITIAL LINE TO rt_field_list
+*        ASSIGNING FIELD-SYMBOL(<ls_field>).
+*
+*      <ls_field>-name = <ls_dd_field>-fieldname.
+*
+*      <ls_field>-data_element =
+*        zab_abap_data_element_bo2=>get_instance_by_ddic_name( <ls_dd_field>-rollname ).
+*
+*    ENDLOOP.
+*
+*  ENDMETHOD.
+
+  METHOD get_non_ddic_field.
+
+    DATA lr_data TYPE REF TO data.
+
+    CREATE DATA lr_data
+       TYPE HANDLE me->gr_abap_elem_descr.
+
+    ASSIGN lr_data->*
+      TO FIELD-SYMBOL(<lv_value>).
+
+    DESCRIBE FIELD <lv_value>
+      TYPE DATA(lv_type).
+
+    CASE lv_type.
+
+      WHEN 'P'.
+
+        DESCRIBE FIELD <lv_value>
+          LENGTH DATA(lv_length) IN BYTE MODE
+          DECIMALS DATA(lv_decimals)
+          OUTPUT-LENGTH DATA(lv_output_length).
+
+      WHEN OTHERS.
+
+        DESCRIBE FIELD <lv_value>
+          TYPE lv_type
+          LENGTH lv_length IN CHARACTER MODE
+          OUTPUT-LENGTH lv_output_length.
+
+    ENDCASE.
+*DESCRIBE FIELD dobj
+*  [OUTPUT-LENGTH olen]
+*  [HELP-ID hlp]
+*  [EDIT MASK mask].
+
+
+    rs_dd_field-internal_type = lv_type.
+    rs_dd_field-length        = lv_length.
+    rs_dd_field-decimals      = lv_decimals.
+    rs_dd_field-output_length = lv_output_length.
+
+  ENDMETHOD.
+
+  METHOD get_ddic_field.
 
     TRY.
 
-        DATA(lr_element) = CAST cl_abap_elemdescr( gr_type_descr  ).
+        DATA(lr_element) = CAST cl_abap_elemdescr( me->gr_abap_elem_descr ).
 
       CATCH cx_root INTO DATA(lx_root).
 
         "Code error
         DATA(lr_return_exc) = zcx_return_exc=>create_by_text(
-          iv_message    = |get_element_dd_field error:  { lx_root->get_text( ) }| ).
+          iv_message    = |get_ddic_field error:  { lx_root->get_text( ) }| ).
 
         RAISE EXCEPTION lr_return_exc.
 
@@ -1798,9 +1901,9 @@ CLASS zab_ddic_data_element_bo IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD get_element_check_table.
+  METHOD get_ddic_check_table.
 
-    DATA(ls_dd_field) = get_element_dd_field( ).
+    DATA(ls_dd_field) = get_ddic_field( ).
 
     "Get check table from structure
     IF ls_dd_field-checktable IS NOT INITIAL.
@@ -1863,9 +1966,9 @@ CLASS zab_ddic_data_element_bo IMPLEMENTATION.
 
   METHOD get_dummy_value.
 
-    DATA(ls_dd_field) = get_element_dd_field( ).
+    DATA(lv_internal_data_type) = get_internal_data_type( ).
 
-    CASE ls_dd_field-inttype.
+    CASE lv_internal_data_type.
 
       WHEN 'C' OR 'g'.
         "C Character String
@@ -1920,7 +2023,7 @@ CLASS zab_ddic_data_element_bo IMPLEMENTATION.
         "j  Static Boxed Components
         "k  Generic Boxed Components
 
-        rv_text = |? initial value unknown for datatype: | && ls_dd_field-inttype.
+        rv_text = |? initial value unknown for datatype: | && lv_internal_data_type.
 
     ENDCASE.
 
@@ -1928,9 +2031,9 @@ CLASS zab_ddic_data_element_bo IMPLEMENTATION.
 
   METHOD get_sql_value.
 
-    DATA(ls_dd_field) = get_element_dd_field( ).
+    DATA(lv_internal_data_type) = me->get_internal_data_type( ).
 
-    CASE ls_dd_field-inttype.
+    CASE lv_internal_data_type.
 
       WHEN 'C'.
         "C Character String
@@ -1982,15 +2085,9 @@ CLASS zab_ddic_data_element_bo IMPLEMENTATION.
         "j  Static Boxed Components
         "k  Generic Boxed Components
 
-        rv_text = |? syntax unknown for datatype: | && ls_dd_field-inttype.
+        rv_text = |? syntax unknown for datatype: | && lv_internal_data_type.
 
     ENDCASE.
-
-  ENDMETHOD.
-
-  METHOD get_description.
-
-
 
   ENDMETHOD.
 
@@ -2111,9 +2208,14 @@ CLASS zab_deep_to_flat_data_cvt2 DEFINITION.
     METHODS convert_data
       IMPORTING iv_root_name              TYPE string
                 is_data                   TYPE any
-      RETURNING VALUE(rt_data_components) TYPE gtt_data_components.
+                iv_empty_table_add_line_ind type abap_bool
+      RETURNING VALUE(rt_data_components) TYPE gtt_data_components
+      RAISING   zcx_return_exc.
 
   PROTECTED SECTION.
+
+    data:
+      gv_empty_table_add_line_ind type abap_bool.
 
     METHODS add_field_data
       IMPORTING level              TYPE gtv_level
@@ -2125,7 +2227,8 @@ CLASS zab_deep_to_flat_data_cvt2 DEFINITION.
                 line_index         TYPE i
                 field_line_count   TYPE i         OPTIONAL
                 field_value        TYPE any
-      CHANGING  ct_data_components TYPE gtt_data_components.
+      CHANGING  ct_data_components TYPE gtt_data_components
+      RAISING   zcx_return_exc.
 
     METHODS write_table_data
       IMPORTING iv_level           TYPE gtv_level
@@ -2135,7 +2238,8 @@ CLASS zab_deep_to_flat_data_cvt2 DEFINITION.
                 ir_type            TYPE REF TO cl_abap_datadescr
                 it_data            TYPE ANY TABLE
       CHANGING  cv_key             TYPE gtv_key
-                ct_data_components TYPE gtt_data_components.
+                ct_data_components TYPE gtt_data_components
+      RAISING   zcx_return_exc.
 
     METHODS write_structure_data
       IMPORTING iv_level           TYPE gtv_level
@@ -2145,7 +2249,8 @@ CLASS zab_deep_to_flat_data_cvt2 DEFINITION.
                 ir_type            TYPE REF TO cl_abap_datadescr
                 is_data            TYPE any
       CHANGING  cv_key             TYPE gtv_key
-                ct_data_components TYPE gtt_data_components.
+                ct_data_components TYPE gtt_data_components
+      RAISING   zcx_return_exc.
 
     METHODS write_any_data
       IMPORTING iv_level           TYPE gtv_level
@@ -2155,13 +2260,16 @@ CLASS zab_deep_to_flat_data_cvt2 DEFINITION.
                 ir_type            TYPE REF TO cl_abap_datadescr
                 i_data             TYPE any
       CHANGING  cv_key             TYPE gtv_key
-                ct_data_components TYPE gtt_data_components.
+                ct_data_components TYPE gtt_data_components
+      RAISING   zcx_return_exc.
 
 ENDCLASS.
 
 CLASS zab_deep_to_flat_data_cvt2 IMPLEMENTATION.
 
   METHOD convert_data.
+
+    gv_empty_table_add_line_ind = iv_empty_table_add_line_ind.
 
     DATA lr_data TYPE REF TO data.
 
@@ -2324,8 +2432,74 @@ CLASS zab_deep_to_flat_data_cvt2 IMPLEMENTATION.
     "Parent key
     DATA(lv_parent_key) = cv_key.
 
+
+    "Create initial line?
+    FIELD-SYMBOLS <lt_table_data> TYPE ANY TABLE.
+
+    IF gv_empty_table_add_line_ind = abap_true.
+
+      IF lines( it_data ) = 0.
+
+        "Table
+        DATA lr_table_data TYPE REF TO data.
+
+        CREATE DATA lr_table_data TYPE HANDLE lr_table_type.
+
+        lr_table_type->get_table_line_type( ).
+
+        ASSIGN lr_table_data->* TO <lt_table_data>.
+
+        "Line
+        DATA lr_line_data TYPE REF TO data.
+
+        CREATE DATA lr_line_data TYPE HANDLE lr_line_type.
+
+        FIELD-SYMBOLS <ls_line> TYPE any.
+
+        ASSIGN lr_line_data->* TO <ls_line>.
+
+        "Append / insert
+        CASE lr_table_type->table_kind.
+
+          WHEN cl_abap_tabledescr=>tablekind_std.
+
+            FIELD-SYMBOLS <lt_std_table> TYPE STANDARD TABLE.
+
+            ASSIGN lr_table_data->* TO <lt_std_table>.
+
+            APPEND <ls_line> TO <lt_std_table>.
+
+          WHEN cl_abap_tabledescr=>tablekind_sorted.
+
+            FIELD-SYMBOLS <lt_sorted_table> TYPE SORTED TABLE.
+
+            ASSIGN lr_table_data->* TO <lt_sorted_table>.
+
+            APPEND <ls_line> TO <lt_sorted_table>.
+
+          WHEN cl_abap_tabledescr=>tablekind_hashed.
+
+            FIELD-SYMBOLS <lt_hashed_table> TYPE HASHED TABLE.
+
+            ASSIGN lr_table_data->* TO <lt_hashed_table>.
+
+            INSERT <ls_line> INTO TABLE <lt_hashed_table>.
+
+          WHEN OTHERS.
+            BREAK-POINT. "Not yet supported.
+
+        ENDCASE.
+
+      ENDIF.
+
+    ELSE.
+
+      ASSIGN it_data TO <lt_table_data>.
+
+    ENDIF.
+
     "Loop at records
-    LOOP AT it_data
+    LOOP AT <lt_table_data>
       ASSIGNING FIELD-SYMBOL(<ls_data>).
 
       DATA(lv_tabix) = sy-tabix.
@@ -2454,15 +2628,24 @@ CLASS zab_deep_to_flat_data_cvt2 IMPLEMENTATION.
 
             ENDIF.
 
-            <ls_data_component>-abap_elemdescr = lr_elem_descr.
-
           WHEN OTHERS.
 
-            BREAK-POINT.
+            DATA(lr_abap_data_element_bo) = zab_abap_data_element_bo2=>get_instance_by_descr(
+              iv_name           = <ls_data_component>-name
+              ir_abap_elemdescr = lr_elem_descr ).
 
-*            <ls_data_component>-output_length = ls_ddic-outputlen.
+            DATA(ls_non_ddic_field) = lr_abap_data_element_bo->get_non_ddic_field( ).
+
+            <ls_data_component>-leng          = ls_non_ddic_field-length.
+            <ls_data_component>-decimals      = ls_non_ddic_field-decimals.
+            <ls_data_component>-outputlen     = ls_non_ddic_field-output_length.
+
+*            <ls_data_component>-datatype      = ls_ddic-datatype.
+            <ls_data_component>-inttype       = ls_non_ddic_field-internal_type.
 
         ENDCASE.
+
+        <ls_data_component>-abap_elemdescr = lr_elem_descr.
 
       WHEN cl_abap_typedescr=>kind_struct.
 
@@ -2570,8 +2753,9 @@ CLASS lcl_deepstruc_to_abapcode_cvt DEFINITION.
       END OF gts_comment_show,
 
       BEGIN OF gts_parameters,
-        empty_fields_ind TYPE abap_bool,
-        comment_show     TYPE gts_comment_show,
+        empty_table_add_line_ind type abap_bool,
+        show_empty_fields_ind    TYPE abap_bool,
+        comment_show             tYPE gts_comment_show,
 
       END OF gts_parameters.
 
@@ -2604,9 +2788,9 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
     "Convert deep structure to flat data
     DATA(lt_flat_data) =
       NEW zab_deep_to_flat_data_cvt2( )->convert_data(
-        iv_root_name = 'GET_DATA( )'
-        is_data      =  is_data ).
-
+        iv_root_name                = 'GET_DATA( )'
+        is_data                     = is_data
+        iv_empty_table_add_line_ind = is_parameters-empty_table_add_line_ind ).
 
     "Convert Flat data to ABAP data code
     DATA lv_line TYPE i.
@@ -2649,10 +2833,6 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
 
       IF sy-subrc <> 0.
         RETURN.
-      ENDIF.
-
-      IF <ls_element>-name = 'PO_ITEMS [5]'.
-        BREAK-POINT.
       ENDIF.
 
       DATA(lv_line) = ||.
@@ -2713,7 +2893,7 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
             BREAK-POINT.
           ENDIF.
 
-          IF is_parameters-empty_fields_ind = abap_false.
+          IF is_parameters-show_empty_fields_ind = abap_false.
 
             IF <ls_element>-initial_value_ind = abap_true.
               CONTINUE.
@@ -2730,19 +2910,25 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
             APPEND lv_line TO rt_lines.
 
             IF is_parameters-comment_show-field_text_show_ind = abap_true.
-              lv_line = lv_line && |Descr.: | && <ls_element>-fieldtext.
+              IF <ls_element>-fieldtext IS NOT INITIAL.
+                lv_line = lv_line && |Descr.: | && <ls_element>-fieldtext.
+              ENDIF.
             ENDIF.
 
             IF is_parameters-comment_show-element_name_show_ind = abap_true.
-              lv_line = lv_line &&
-                COND string( WHEN lv_line <> || THEN |, | ) &&
-                |Element name: | &&  <ls_element>-rollname.
+              IF <ls_element>-rollname IS NOT INITIAL.
+                lv_line = lv_line &&
+                  COND string( WHEN lv_line <> || THEN |, | ) &&
+                  |Element name: | &&  <ls_element>-rollname.
+              ENDIF.
             ENDIF.
 
             IF is_parameters-comment_show-domain_name_show_ind = abap_true.
-              lv_line = lv_line &&
-              COND string( WHEN lv_line <> || THEN |, | ) &&
-              |Dom.name: | && <ls_element>-domname.
+              IF <ls_element>-domname IS NOT INITIAL.
+                lv_line = lv_line &&
+                COND string( WHEN lv_line <> || THEN |, | ) &&
+                |Dom.name: | && <ls_element>-domname.
+              ENDIF.
             ENDIF.
 
             IF is_parameters-comment_show-value_table_name_show_ind = abap_true.
@@ -2772,29 +2958,32 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
             DATA lv_length TYPE string.
 
             IF is_parameters-comment_show-internal_length_show_ind = abap_true.
-              lv_length  = |{ <ls_element>-leng ALPHA = OUT }|.
-              lv_length  = condense( lv_length ).
-              lv_line = lv_line &&
-                COND string( WHEN lv_line <> || THEN |, | ) &&
-                |Internal length: { lv_length }|.
+              IF <ls_element>-leng IS NOT INITIAL.
+                lv_length  = |{ <ls_element>-leng ALPHA = OUT }|.
+                lv_length  = condense( lv_length ).
+                lv_line = lv_line &&
+                  COND string( WHEN lv_line <> || THEN |, | ) &&
+                  |Internal length: { lv_length }|.
+              ENDIF.
             ENDIF.
 
             IF is_parameters-comment_show-output_length_show_ind = abap_true.
-
-              lv_length  = |{ <ls_element>-outputlen ALPHA = OUT }|.
-              lv_length  = condense( lv_length ).
+              IF <ls_element>-outputlen IS NOT INITIAL.
+                lv_length  = |{ <ls_element>-outputlen ALPHA = OUT }|.
+                lv_length  = condense( lv_length ).
 *              lv_length  = replace( val = lv_length sub = | | with = || ).
 *              SHIFT lv_length RIGHT DELETING TRAILING SPACE.
-              lv_line = lv_line &&
-                COND string( WHEN lv_line <> || THEN |, | ) &&
-                |Output length: { lv_length }|.
+                lv_line = lv_line &&
+                  COND string( WHEN lv_line <> || THEN |, | ) &&
+                  |Output length: { lv_length }|.
+              ENDIF.
             ENDIF.
 
             IF is_parameters-comment_show-decimal_count_show_ind = abap_true.
               IF <ls_element>-decimals IS NOT INITIAL.
                 DATA lv_value TYPE string.
                 lv_value  = |{ <ls_element>-decimals ALPHA = OUT }|.
-                lv_value  = condense( lv_length ).
+                lv_value  = condense( lv_value ).
                 lv_line = lv_line &&
                   COND string( WHEN lv_line <> || THEN |, | ) &&
                   |Decimals: | && lv_value.
@@ -2802,9 +2991,11 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
             ENDIF.
 
             IF is_parameters-comment_show-data_type_name_show_ind = abap_true.
-              lv_line = lv_line &&
-                COND string( WHEN lv_line <> || THEN |, | ) &&
-                |Data type: | && <ls_element>-datatype.
+              IF <ls_element>-datatype IS NOT INITIAL.
+                lv_line = lv_line &&
+                  COND string( WHEN lv_line <> || THEN |, | ) &&
+                  |Data type: | && <ls_element>-datatype.
+              ENDIF.
             ENDIF.
 
             IF is_parameters-comment_show-internal_data_type_name_ind = abap_true.
@@ -2834,8 +3025,8 @@ CLASS lcl_deepstruc_to_abapcode_cvt IMPLEMENTATION.
           "Set field
           ""********************************************************************
           DATA(lr_ddic_data_element_bo) =
-            zab_ddic_data_element_bo=>get_by_descr(
-              iv_name           = 'Test'
+            zab_abap_data_element_bo2=>get_instance_by_descr(
+              iv_name           = <ls_element>-name
               ir_abap_elemdescr = <ls_element>-abap_elemdescr ).
 
           lv_value = lr_ddic_data_element_bo->get_sql_value( <ls_element>-internal_value ).
@@ -3355,8 +3546,8 @@ CLASS lcl_main_controller DEFINITION.
 
     TYPES:
       BEGIN OF gts_data_object,
-        data_object  TYPE REF TO data,
-        is_empty_ind TYPE abap_bool,
+        data_object              TYPE REF TO data,
+        empty_table_add_line_ind TYPE abap_bool,
       END OF gts_data_object,
       gtt_data_objects TYPE STANDARD TABLE OF gts_data_object.
 
@@ -3380,9 +3571,9 @@ CLASS lcl_main_controller IMPLEMENTATION.
         DATA lt_all_abap_lines TYPE lcl_deepstruc_to_abapcode_cvt=>gtt_lines.
 
         LOOP AT it_data_objects
-          ASSIGNING FIELD-SYMBOL(<lr_data>).
+          ASSIGNING FIELD-SYMBOL(<ls_data>).
 
-          ASSIGN <lr_data>-data_object->* TO FIELD-SYMBOL(<l_data>).
+          ASSIGN <ls_data>-data_object->* TO FIELD-SYMBOL(<l_data>).
 
           IF lt_all_abap_lines[] IS NOT INITIAL.
 
@@ -3396,17 +3587,17 @@ CLASS lcl_main_controller IMPLEMENTATION.
 
           DATA(lr_converter) = NEW lcl_deepstruc_to_abapcode_cvt( ).
 
-          DATA lv_empty_fields_ind TYPE abap_bool.
+          DATA lv_show_empty_fields_ind TYPE abap_bool.
 
-          IF <lr_data>-is_empty_ind = abap_true.
-            lv_empty_fields_ind = abap_true.
-            BREAK-POINT. "fill empty structure.
+          IF <ls_data>-empty_table_add_line_ind = abap_true.
+            lv_show_empty_fields_ind = abap_true.
           ELSE.
-            lv_empty_fields_ind = p_empty.
+            lv_show_empty_fields_ind = p_empty.
           ENDIF.
 
           DATA(ls_convert_parameters) = VALUE lcl_deepstruc_to_abapcode_cvt=>gts_parameters(
-            empty_fields_ind = lv_empty_fields_ind
+            empty_table_add_line_ind      =  <ls_data>-empty_table_add_line_ind
+            show_empty_fields_ind         = lv_show_empty_fields_ind
             comment_show = VALUE #(
               field_text_show_ind           = p_fldtxt
               element_name_show_ind         = p_elemnm
@@ -3507,7 +3698,7 @@ START-OF-SELECTION.
   "*********************************************************
 
   "*********************************************************
-  "Method return structure example
+  "Expected return data example - Method return structure
   "*********************************************************
 
   DATA(lr_element_descr) =
@@ -3515,7 +3706,19 @@ START-OF-SELECTION.
 
   DATA(ls_bukrs_ddic_field) = lr_element_descr->get_ddic_field( ).
 
-  CLEAR ls_bukrs_ddic_field.
+*  "*********************************************************
+*  "Execution data example - Deep structure
+*  "- It fills tables with initial one empty record and
+*  "  selection screen parameter p_empty is ingnored.
+*  "*********************************************************
+*
+*  TYPES:
+*    BEGIN OF gts_sales_order,
+*      order_header_in TYPE bapisdhead,
+*      order_items_in  TYPE STANDARD TABLE OF bapiitemin WITH DEFAULT KEY,
+*    END OF gts_sales_order.
+*
+*  DATA ls_sales_order TYPE gts_sales_order.
 
   "*********************************************************
   "Convert Deep structure data to ABAP data code
@@ -3523,6 +3726,11 @@ START-OF-SELECTION.
 
   gr_controller->show_abap_data_lines(
     it_data_objects = VALUE #(
-      ( data_object  = REF #( ls_bukrs_ddic_field )
-        is_empty_ind = abap_true )
+
+      ( data_object              = REF #( ls_bukrs_ddic_field )
+        empty_table_add_line_ind = abap_false )
+
+*      ( data_object              = REF #( ls_sales_order )
+*        empty_table_add_line_ind = abap_true )
+
     ) ).
